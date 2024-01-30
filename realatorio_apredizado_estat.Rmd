@@ -1,0 +1,894 @@
+---
+output: 
+  pdf_document:
+    citation_package: natbib
+    keep_tex: true
+    fig_caption: true
+    latex_engine: pdflatex
+    template: svm-latex-ms.tex
+bibliography: master.bib
+header-includes:
+  -  \usepackage{hyperref}
+     \usepackage[utf8]{inputenc}
+     \usepackage[brazil]{babel}
+     \usepackage[T1]{fontenc}
+     \usepackage{amsmath}
+     \usepackage{indentfirst}
+     \usepackage{graphicx}
+biblio-style: Myplainnat
+title: "Uma análise preditiva da chuva e vazão do rio São Francisco."
+author:
+- name: Rodolpho Jordan
+  affiliation: Universidade de São Paulo
+abstract: "Este relatório fornece análises do conjunto de dados referentes as medições de vazão e precipitação em estações localizadas na região do rio São Francisco. Neste sentido, foram propostas seleções de modelos para realizar predições para as medições de vazão na estação 46998000 (coluna Y) como requisito parcial para a obtenção da aprovação na disciplina de aprendizagem em estatística em altas dimensões. Sendo assim, propomos alguns métodos de aprendizagem estatística utilizando técnicas machine learning. Dentre os modelos, especificamente, foram propostos: Modelos lineares com regularização; Modelos baseados em árvores (bagging, florestas aleatórias ou boosting). Em seguida, foi escolhido aquele que teve melhor desempenho, a fim de melhor predizer a vazão."
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+geometry: margin=1in
+fontfamily: mathpazo
+fontsize: 11pt
+# spacing: double
+endnote: no
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE,
+                      message=FALSE, warning=FALSE,
+                      fig.path='figs/',
+                      cache.path = '_cache/',
+                      fig.process = function(x) {
+                      x2 = sub('-\\d+([.][a-z]+)$', '\\1', x)
+                      if (file.rename(x, x2)) x2 else x
+                      })
+```
+
+# Introdução 
+
+
+Os modelos de aprendizagem estatística, também chamados de modelos de aprendizado de máquina (machine learning em inglês), desempenham um papel fundamental na transformação de dados em informações significativas, possibilitando a automação de tarefas complexas e a tomada de decisões inteligentes em uma variedade de setores. Sua importância reside na capacidade de aprender padrões a partir de grandes volumes de dados, proporcionando insights valiosos e impulsionando a inovação. Esses modelos são essenciais para a personalização de experiências, desde recomendações de produtos até assistentes virtuais, melhorando a eficiência e a eficácia de sistemas automatizados. Além disso, desempenham um papel crucial na análise preditiva, permitindo antecipar tendências e padrões futuros com base em dados históricos. À medida que a tecnologia avança, os modelos de aprendizado de máquina continuarão a moldar e otimizar diversas áreas, contribuindo para a resolução de problemas complexos e impulsionando avanços significativos em diversas disciplinas.
+
+Neste relatório, apesentamos alguns algoritmos de aprendizado supervisionado. Isto é, algoritmos que relacionam uma saída e uma entrada com base em dados rotulados. Aqui, estes algoritmos podem ser usados tanto para problemas de regressão, como também para problemas de classificação. Alguns deles são métodos paramétricos, tais como os modelos de \textit{regressão linear} e \textit{regressão logística}; e outros são métodos não paramétricos, no sentido de que funções são ajustado aos dados, e não parâmetros, de modo a preservar uma forma tão aderente quanto possível aos dados empíricos sem precisar de muitas suposições. Este é caso, por exemplo, de métodos como:  \textit{árvore de decisão} e \textit{redes neurais}. O objetivo deste relatório é propor um modelo que consiga realizar boas predições para as observações das medições de vazão do rio São Francisco. Desta forma, apresentaremos brevemente um resumo de cada método utilizado e em seguida suas aplicações ao conjuntos de dados. 
+
+É relevante ressaltar que a análise dos dados apresentados neste estudo foi conduzida utilizando o ambiente de programação R, na versão 4.2.3 (2023-03-15), compatível com a plataforma \textbf{Linux}. Essa análise foi realizada por meio de um Ambiente de Desenvolvimento Integrado (IDE) denominado RStudio. A linguagem R e seus pacotes estão disponíveis gratuitamente no endereço \href{url}{\textbf{http://www.r-project.org}}. Além disso, para a elaboração deste relatório, empregou-se o sistema tipográfico {\LaTeX} por meio do R Markdown. 
+
+# Modelo de regressão linear
+
+Diferentes métodos especificam uma forma diferente para a escolha da função $g \in \mathcal{G}$. No método de regressão linear, é assumido uma família $\mathcal{G}$ de funções que possuem uma forma linear, tais como:
+\begin{align*}
+\mathcal{G} = \{g(\boldsymbol{x}) = \beta_0 + \boldsymbol{x}^\top \boldsymbol{\beta}, \,\ \beta_0 \in \mathrm{I\!R}, \boldsymbol{\beta} \in \mathrm{I\!R}^p \}.
+\end{align*}
+É, portanto, um método de aprendizagem estatística paramétrico, um vez que sua forma é conhecida. É um modelo bastante simples de implementar, além de ser interpretável. 
+
+Este modelo é adequado para qualquer problema onde as variáveis de entrada e saída são valores contínuos e onde há uma boa correlação linear (positiva ou negativa) entre os dados. Ou seja, quando a relação ou associação entre os dados pode ser definida por uma linha reta.
+
+
+# Seleção de variáveis e regularização
+
+Considerando situações em que uma quantidade de dados são coletados de muitas fontes, isto é, são observações de uma grande quantidade de variáveis, estas podem não ser de fato relevantes para o modelo. Na verdade, pode ser que a maior parte delas apenas gerem ruídos, podendo levar ao \textit{underfitting} ou \textit{overfitting}. Desta forma, o desempenho do modelo de regressão linear pode ser bem ruim nas previsões. 
+
+Neste sentido, podemos selecionar um modelo mais simples dentre todos os possíveis utilizando um subconjunto de variáveis que temos disponíveis. Este é um caso particular de seleção de modelo, quando avaliamos o modelo apenas segundo a seleção de variáveis. Esta seleção de variáveis tem a vantagem de aumentar a interpretabilidade do modelo e reduzir sua complexidade, evitando o superajuste. Para isso, usaremos os métodos de seleção de variáveis \textit{Forward} e \textit{Backward Stepwise}.
+
+Além desses, os métodos de regularização de regressão comumente referidos como Lasso ou L1 e Ridge ou L2 podem ser a solução para esses casos, diminuindo a importância de variáveis desinteressantes para o modelo e aumentando a sua performance, bem como podemos também considerar outras funções de regularização, tais como o ELASTIC NET. 
+
+# Árvore de decisão 
+
+Arvores de decisão é uma forma de aprendizagem estatística supervisionada usada para resolver problemas de regressão e classificação. É um método não paramétrico, isto é, a relação entre a variável que se deseja predizer e suas variáveis explicativas se dá mediante estruturas que se adéquem aos dados e não parâmetros. Em outras palavras, é um método que devolve uma função $g: \mathcal{X} \to \mathcal{Y}$ que se ajusta ao conjunto de dados e não os dados que se ajustam a uma forma particular previamente estabelecida para eles e, portanto, preservando uma forma tão aderente quanto possível aos dados empíricos sem precisar de muitas suposições.
+
+Aqui, a função $g$ é baseada em sucessivas divisões do espaço  de variáveis preditoras em regiões simples (retângulos) e que podem ser descritas graficamente por meio de uma árvore. Contudo, estas árvores de decisão não costuma ter, sozinhas, uma grande acurácia nas predições, mas combinadas levam a métodos poderosos (florestas aleatórias, bagging, boosting…). No contexto de regressão a árvore de decisão será denominada de \textit{árvore de regressão}. No caso de classificação, será denominada de \textit{árvore de classificação}.
+
+## Árvore de regressão e classificação
+
+O objetivo inicialmente é encontrar regiões relativamente simples $R_1, R_2,\ldots R_j$ no espeço $\mathcal{X} \in \mathrm{I\!R}^p$ das variáveis preditoras que minimizem o erro: 
+
+\begin{align}
+\widehat{E}_D(R_1, R_2,\ldots R_j) = \sum_{j=1}^J\sum_{i \in R_j}(y_i - \overline{y}_{R_j})^2,
+\end{align}
+de forma eficiente. Para isso, devemos usar a divisão binária recursiva para fazer crescer uma grande árvore nos dados de treinamento, parando apenas quando cada nó terminal tem menos do que um número mínimo de observações. 
+
+Contudo, esse procedimento pode causar super ajuste (\textit{overfitting}) se houverem poucas observações em cada região (o caso extremo seria ter uma única observação em cada região, cujo erro na amostra seria $0$) ou, por outro lado, podemos ter problemas de sobre ajuste (\textit{underfitting}), quando fixamos um número grande de observações por região e, nesse caso, o erro fora da amostra também seria grande porque temos um alto viés. Uma forma de evitar esses problemas é “podar” a árvore final para ter um certo balanço entre ajuste e complexidade. 
+
+
+## Poda da árvore 
+
+Como em muitas outras abordagens, a poda da árvore está baseada na regularização do erro estimado dentro da amostra. A ideia básica aqui é introduzir um parâmetro de ajuste adicional, denotado por $\alpha$, que equilibra a profundidade da árvore e sua adequação aos dados de treinamento. Isto é, para cada $\alpha > 0$, escolhemos a árvore $T$ que minimiza:
+
+\begin{align}
+\widehat{E}_D(T) + \alpha |T| = \sum_{j=1}^J\sum_{i \in R_j}(y_i - \overline{y}_{R_j})^2 + \alpha |T|,
+\end{align}
+em que $|T|$ a quantidade de regiões da árvore. Podemos utilizar validação ou validação cruzada para selecionar o valor de $\alpha$.
+
+# Métodos baseados em árvores 
+## Bagging 
+
+As árvores de decisão discutidas acima sofrem de alta variação, isto é, os resultados obtidos para um conjunto particular dos dados podem ser bem diferentes quando comparado a um novo ajuste de outro conjunto de dados. O que é uma grande desvantagem. Em geral, queremos um método que seja o mais estável possível. Ou seja, queremos um procedimento com baixa variação, capaz de produzir resultados semelhantes se aplicado repetidamente a conjuntos de dados distintos. 
+
+Neste sentido, podemos aplicar o método de \textit{bootstrap aggregation}, ou \textbf{bagging}, que é um procedimento geral para reduzir a variância de um método de aprendizagem estatística que, nesse contexto, é baseado na combinação do resultado do ajuste de várias árvores de decisão modeladas em diferentes subamostras do mesmo conjunto de dados.
+
+## Floresta aleatórias 
+
+Florestas aleatórias é outro procedimento que também visa reduzir a variância de um método de aprendizagem estatística. A ideia é a mesma utilizada no bagging, mas utilizando apenas subconjuntos de variáveis diferentes em cada divisão dos nós das árvores: cada vez que uma divisão vai ser feita, somente $m$ variáveis preditoras são consideradas para definir a nova região. Observe, portanto, que o bagging é simplesmente um caso especial de uma floresta aleatória com $m = p$. O método das florestas aleatórias fornece uma melhoria em relação ao bagging, uma vez que diminui a dependência entre as árvores.
+
+Sendo assim, podemos ajustar uma floresta aleatória exatamente da mesma maneira que foi feito no bagging. Porém, usando um número menor de variáveis. Em geral, é utilizado o valor de $m\approx \sqrt{p}$ quando se está em problemas de classificação. Mas por padrão, o \textit{randomForest} do R usa $\max\{\lfloor p \rfloor/3,1\}$ variáveis ao construir uma floresta aleatória de árvores de regressão.
+
+## Boosting
+
+Boosting é outra maneira de melhorar a previsão das árvores de decisão. Assim como bagging e florestas aleatórias, é uma abordagem geral que pode ser aplicada a muitos métodos de aprendizagem estatística para regressão ou classificação. O método boosting é bastante similar ao bagging. Contudo, o método boosting não envolve amostragem de bootstrap. Em vez disso, cada árvore é ajustada em uma versão modificada do conjunto de dados original.
+
+# Conjunto de treinamento e Conjunto de teste
+
+Quando as previsões são calculada baseada apenas no conjunto de treinamento existirá um certo viés, isto é, os resultados obtidos serão mais otimistas do que deveriam. A razão pela qual isso ocorre deve-se ao fato de que os dados usados para construir o modelo são os mesmos dados usados para avaliar as predições. Assim, para evitar esse problema, usualmente divide-se os dados em dois grupos: um grupo de treinamento, que é usado para ajustar o modelo, e um grupo de teste, que é usado para calcular o erro esperado do modelo. Sendo assim, escolhemos um conjunto de dados para treinamento e utilizamos para teste o conjunto complementar.
+
+# Seleção do modelo
+
+Os erros estimados dentro da amostra de treinamento, bem como fora da amostra no conjunto de teste associado aos modelos propostos serão calculados utilizando o \textit{Erro Absoluto Médio} (MAE – sigla em inglês), dado pela fórmula:
+
+\begin{equation*}
+\mathrm{MAE}(y_i,\widehat{y}_i)=\frac{1}{n}\sum\limits_{i=1}^{n}|y_i-\widehat{y}_i|,
+\end{equation*}
+em que $\widehat{y}_i$ é o valor predito da \textit{i}-ésima observação e $y_i$ o valor verdadeiro correspondente. Esta será a métrica utilizada para comparar os modelos aplicados no presente relatório e a ideia é selecionar aquele que tiver o menor $\mathrm{MAE}$.
+
+
+# Descrição dos dados 
+
+Os dados utilizados nesse relatório são referentes a medições de vazão e precipitação em estações localizadas na região do rio São Francisco. As estações consideradas serão usadas para treinar os modelos preditivos. Esses dados consistem de $n=1717$ observações e $p=83$ variáveis. Cada linha do banco de dados contêm medições semanais de vazão em diferentes estações fluviométricas sobre o rio São Francisco e de chuva em estações pluviométricas em regiões próximas do rio. Se a estação é fluviométrica, o dado armazenado é a vazão média registrada na semana correspondente. Caso a estação seja pluviométrica, o dado registrado é a chuva acumulada naquela semana. A primeira coluna, chamada $Y$, contém a medida de vazão na estação fluviométrica de código $46998000$, que corresponde à estação em que se tem interesse em fazer previsão. A vazão na coluna $Y$ corresponde à medição na semana seguinte às demais medições da mesma linha. A seguir, apresentamos as primeiras $5$ linhas e as primeiras $8$ variáveis desse data frame:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE,cache = TRUE}
+load("dados_rio_sf.rdata")
+head(treino_sf[,1:8])
+
+```
+
+O objetivo desta análise é propor um modelo que consiga realizar boas predições para as medições de vazão na estação $46998000$ (coluna $Y$), dadas as medições tomadas nas estações do sistema na semana anterior (demais colunas). Para se ter uma ideia da localização das estações, veja o mapa da figura \eqref{fig:mapa}. A estação em vermelho é a que será considerada como variável resposta. As estações em azul são pluviais e as em laranja são fluviais, e serão utilizadas como variáveis peditoras.
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE,cache = TRUE}
+library(mapproj) 
+
+library(rgdal)
+br <- readOGR("mapa_BR", "BRASIL")
+rs <- readOGR("RIO_SAO_FRANCISCO", "RIO_SAO_FRANCISCO")
+library(descr)
+br$ESTADO <- toUTF8(br$ESTADO, "IBM850")
+```
+
+```{r mapa, echo=FALSE, fig.dim = c(7.2,4.5), out.width="90%",fig.cap="Mapa do percurso do rio São Francisco e a localização de suas estações pluviais e fluviais.", fig.align="center"}
+par(mfrow = c(1,2))
+
+plot(br)
+text(coordinates(br), as.character(br$UF), cex = 0.7)
+map.axes()
+lines(c(-54.5, -54.5, -35, -35, -54.5), c(-23, -7, -7, -23, -23), col = "black")
+#coordenadas da rosa dos ventos
+coodros<-c(-70,-19)
+compassRose(coodros[1],coodros[2], cex=0.6)
+
+
+
+grid<-c(-90,-20,-50,20)
+map.grid(grid, nx = 5, ny = 5, col="grey50", font=1, cex=0.7 , pretty = T)
+
+#coordenadas da escala
+coordscale<-c(-75,-24)
+
+map.scale(coordscale[1],coordscale[2],ratio=F, cex=0.5)
+
+
+se<-br[br$ESTADO == "Sergipe",]
+plot(se, col = "grey70", add = T)
+text(coordinates(se), as.character(se$UF), cex = 0.7)
+
+
+ba<-br[br$ESTADO == "Bahia",]
+plot(ba, col = "grey70", add = T)
+text(coordinates(ba), as.character(ba$UF), cex = 0.7)
+
+mg<-br[br$ESTADO == "Minas Gerais",]
+plot(mg, col = "grey70", add = T)
+text(coordinates(mg), as.character(mg$UF), cex = 0.7)
+
+# Rio São Francisco
+
+plot(rs, add = T, col = "cyan")
+
+
+estpluv<-estacoes[estacoes$estacao_tipo=="Pluviométrica",]
+points(estpluv$lon,estpluv$lat, cex = 0.3,col = "blue", pch = 19)
+
+estfluv<-estacoes[estacoes$estacao_tipo=="Fluviométrica",]
+points(estfluv$lon,estfluv$lat, cex = 0.8,col = "yellow", pch = 4)
+
+es<-estacoes[estacoes$estacao_codigo =="46998000",]
+points(es$lon,es$lat, cex = 0.8,col = "red", pch = 4)
+
+
+
+
+# Zoom no mapa
+plot(c(-54.5,-35),c(-23,-7), type = "n", axes = F, ann=F)
+map.axes()
+
+plot(br, add = T)
+text(coordinates(br), as.character(br$UF), cex = 0.7)
+plot(se, col = "grey70", add = T)
+text(coordinates(se), as.character(se$UF), cex = 0.7)
+
+
+plot(ba, col = "grey70", add = T)
+text(coordinates(ba), as.character(ba$UF), cex = 0.7)
+
+plot(mg, col = "grey70", add = T)
+text(coordinates(mg), as.character(mg$UF), cex = 0.7)
+
+
+
+#coordenadas da rosa dos ventos
+coodros<-c(-37.5,-19)
+compassRose(coodros[1],coodros[2], cex=0.6)
+
+grid<-c(-56,-34,-24,-5)
+map.grid(grid, nx = 5, ny = 5, col="grey50", font=1, cex=0.7 , pretty = T)
+
+#coordenadas da escala
+coordscale<-c(-39.5,-21)
+
+map.scale(coordscale[1],coordscale[2],ratio=F, cex=0.5)
+
+
+plot(rs, add = T, col = "cyan")
+
+points(estpluv$lon,estpluv$lat, cex = 0.3,col = "blue", pch = 19)
+points(estfluv$lon,estfluv$lat, cex = 0.8,col = "yellow", pch = 4)
+points(es$lon,es$lat, cex = 0.8,col = "red", pch = 4)
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+dados<-data.frame(treino_sf)
+```
+
+
+Sendo assim, foi selecionada aleatoriamente $80\%$ dos dados para construir o conjunto de treinamento e, portanto, $20\%$ para teste. Uma vez feita essa divisão do conjunto de dados em treino e teste, serão ajustados diferentes modelo para estimar os valores da vazão segundo as covariáveis e escolher aquele com maior poder preditivo 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE,cache = TRUE}
+#----------- Dividindo os dados em treinamento e teste ------------------
+# seleciona aleatoriamente 80% dos dados para construir o
+# conjunto de treinamento
+
+set.seed(1994)
+ids <- sample(1:nrow(dados), size = 0.8 * nrow(dados))
+dados_tr <- dados[ids,] # dados de treino
+dados_val <- dados[-ids,] # dados de teste
+# data frame com resultados dos modelos
+resultados <- data.frame(modelo = c("Reg. Linear","forward",
+                                    "backward","lasso", "ridge",
+                                    "elastic-net","arvore", 
+                                    "arvore podada","bagging",
+                                     "rf", "bst"),
+                         erro_dentro = NA,
+                         erro_fora = NA)
+colnames(resultados)[2:3] <- c("MAE dentro", "MAE fora")
+```
+
+# Modelo de regressão linear 
+
+Inicialmente, foi ajustado um modelo de regressão linear para tentar predizer a vazão com base em suas variáveis explicativas. Neste caso, o modelo de regressão linear pode ser ajustado por meio da função \textit{lm} e, com isso, obteve-se os resultados a seguir:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE,cache = TRUE}
+# ---------Modelo linear -------------------------------------------
+
+fit1 <- lm(Y ~., dados_tr) # ajuste do modelo
+
+# erro dentro da amostra
+reg_lin_erro_dentro <- mean(abs(predict(fit1, dados_tr) - dados_tr$Y))
+
+# erro fora dentro da amostra
+reg_lin_erro_fora <- mean(abs(predict(fit1, dados_val) - dados_val$Y))
+
+resultados[which(resultados$modelo=="Reg. Linear"), 2:3] = c(reg_lin_erro_dentro, reg_lin_erro_fora)
+
+resultados[which(resultados$modelo=="Reg. Linear"),]
+```
+
+Uma outra forma de ver o desempenho do modelo é por meio da visualização gráfica. Plotando os valores da variável $y$ real contra os seus respectivos valores preditos $\widehat{y}$, espera-se um comportamento próximo ao linear se os valores ajustados estiverem próximos aos verdadeiros.  Portanto, uma vez que as predições estão bem próximas da linha vermelha que, nesta caso, representa o valor real da variável $y$, então pode-se afirmar que o modelo de regressão linear possui precisão razoável para realizar as previsões para os dados da vazão. 
+
+```{r echo=FALSE, fig.align="center", fig.cap="Performance do modelo.", message=FALSE, warning=FALSE, out.width="60%",cache = TRUE}
+
+# performance do modelo
+
+ggplot() + 
+  geom_point(aes(y = dados_val$Y, x = predict(fit1, dados_val))) +
+  geom_abline(col = "red") + labs(y = "Valor real da variável Y", 
+                        x =  "Predições", 
+                        title = "Performance do modelo: Regressão Linear") +
+                         theme_minimal()
+
+```
+
+# Seleção de variáveis e regularização
+
+```{r forward_selec, message=FALSE, warning=FALSE, include=FALSE}
+
+
+# --------- Parte 2 -----------------------------------------
+# métodos de seleção de variáveis 
+
+
+# ---- selecao progressiva (forward stepwise) -----
+library(leaps) # tem as funcoes de selecao de variaveis
+
+
+fw <- regsubsets(Y ~., # forumula
+                 data = dados_tr, # dados
+                 nvmax = ncol(dados_tr)-1, # numero max de variaveis
+                 method = "forward") # metodo
+
+fw_sum <- summary(fw)
+
+num_coef <- which.min(fw_sum$bic) # numero de coeficientes escolhidos
+fw_coef <- coef(fw, num_coef) # valores dos coeficientes estimados
+```
+
+Considerando o método de seleção de variáveis \textit{Forward Stepwise} (seleção progressiva), o tamanho do subconjunto selecionado com o critério BIC foi igual a `r num_coef`, de modo que as variáveis correspondentes foram:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, cache = TRUE}
+names(fw_coef)[-1]
+```
+\noindent
+Note que estas variáveis são as que minimizam o critério BIC (vejo o gráfico da figura \eqref{fig:BIC}) e, portanto, são correspondentes ao melhor modelo dentre todos os possíveis utilizando um subconjunto de variáveis que se dispõem.
+
+```{r BIC, echo=FALSE, message=FALSE, warning=FALSE, out.width="60%",fig.cap="Seleção de modelo via Forward Stepwise.", fig.align="center", fig.dim=c(6,4),cache = TRUE}
+
+ggplot(data.frame(bic=fw_sum$bic, n=1:length(fw_sum$bic)), aes(n, bic)) +
+  geom_point() +
+  geom_vline(xintercept = which.min(fw_sum$bic), col="red") +
+  scale_x_continuous(breaks=1:10) +
+  labs(title = "BIC - forward", x = "Número de variáveis",
+       y = "BIC")
+
+```
+\noindent
+Com isso, foi ajustado um modelo de regressão linear com as variáveis selecionadas anteriormente o que resultou, respectivamente, nos seguintes erros estimados dentro da amostra de treinamento e fora da amostra no conjunto de validação. 
+
+```{r forward_pred, echo=FALSE, message=FALSE,cache = TRUE, warning=FALSE}
+# calculo do erro estimado dentro e fora da amostra
+dados_matriz <- model.matrix(Y ~., data=dados)
+fw_erro_dentro <- mean(abs(dados_matriz[ids, names(fw_coef)] %*% fw_coef -
+                          dados$Y[ids]))
+fw_erro_fora <- mean(abs(dados_matriz[-ids, names(fw_coef)] %*% fw_coef -
+                        dados$Y[-ids]))
+
+y_fw_fora <- dados_matriz[-ids, names(fw_coef)] %*% fw_coef 
+resultados[which(resultados$modelo=="forward"), 2:3] = c(fw_erro_dentro, fw_erro_fora)
+
+resultados[which(resultados$modelo=="forward"), ]
+```
+
+
+```{r backward_selec, message=FALSE, warning=FALSE, include=FALSE}
+
+
+# --------- Parte 2 -----------------------------------------
+# métodos de seleção de variáveis 
+
+
+
+#-------- seleção regressiva--------------------------------
+
+
+
+bw <- regsubsets(Y ~., # forumula
+                 data = dados_tr, # dados
+                 nvmax = ncol(dados_tr)-1, # numero max de variaveis
+                 method = "backward") # metodo
+bw_sum <- summary(bw)
+num_coef_bw <- which.min(bw_sum$bic) # numero de coeficientes escolhidos
+bw_coef <- coef(bw, num_coef_bw) # valores dos coeficientes estimados
+
+```
+
+Considerando agora o método de seleção de variáveis \textit{Backward Stepwise} (seleção regressiva), o tamanho do subconjunto selecionado com o critério BIC foi igual a `r num_coef_bw`, de modo que  as variáveis correspondentes foram:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+names(bw_coef)[-1]
+```
+\noindent
+Assim como na seleção progressiva, na seleção regressiva as variáveis selecionadas são as que minimizam o critério BIC e correspondem ao melhor modelo dentre todos os possíveis utilizando um subconjunto de variáveis. Sendo assim, o modelo de regressão linear foi ajustado com as variáveis selecionadas anteriormente o que resultou, respectivamente, nos seguintes erros estimados. 
+
+```{r backward_pred, echo=FALSE, message=FALSE, warning=FALSE,cache = TRUE}
+# calculo do erro estimado dentro e fora da amostra
+bw_erro_dentro <- mean(abs(dados_matriz[ids, names(bw_coef)] %*% bw_coef -
+                          dados$Y[ids]))
+bw_erro_fora <- mean(abs(dados_matriz[-ids, names(bw_coef)] %*% bw_coef -
+                        dados$Y[-ids]))
+
+y_bw_fora <- dados_matriz[-ids, names(bw_coef)] %*% bw_coef
+
+
+resultados[which(resultados$modelo=="backward"), 2:3] = c(bw_erro_dentro, bw_erro_fora)
+
+
+resultados[which(resultados$modelo=="backward"), ]
+```
+\noindent
+Neste caso, pode-se observar que o erro estimado fora da amostra no conjunto de validação associado a este modelo selecionado pelo método de \textit{Backward Stepwise} é melhor do que o obtido pelo método \textit{Forward Stepwise} e pela regressão linear considerando todas as variáveis. O desempenho considerando o conjunto de teste pode ser visualizado graficamente. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="60%",fig.cap="Performance do modelo.", fig.align="center"}
+
+# performance do modelo
+
+ggplot() + 
+  geom_point(aes(y = dados_val$Y, x = y_bw_fora)) +
+  geom_abline(col = "red") + labs(y = "Valor real da variável Y", 
+                        x =  "Predições", 
+                        title = "Performance do modelo: backward stepwise") +
+                         theme_minimal()
+```
+
+Considerando o agora método de regressão linear com penalização LASSO, por meio da validação cruzada, escolhemos o valor do hiperparâmetro de penalização que minimiza o erro de validação cruzada (lambda.min), dado por: 
+
+```{r regul_lasso_sf_CV, echo=FALSE, message=FALSE, warning=FALSE,cache = TRUE}
+
+# --------- Parte 3 -------------------------------------------------------
+# métodos de regularização
+# LASSO
+library(glmnet) # tem as funcoes para lasso, ridge e elasticnet
+
+# preparacao de variaveis para os modelos usando glmnet
+
+
+x <- model.matrix(Y~., data = dados_tr)[,-1]
+
+# LASSO - validação cruzada
+# ajuste para o melhor lambda usando cross-validation
+set.seed(1994) 
+cv.lasso <- cv.glmnet(x, dados_tr[,1], alpha = 1)
+
+cv.lasso$lambda.min
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="60%",fig.cap="Performance do modelo.", fig.align="center", fig.dim=c(6,4)}
+
+plot(cv.lasso, cex.lab = 1.3)
+
+```
+\noindent
+Com isso, será ajustado um modelo de regressão linear com penalização LASSO utilizando o valor de $\lambda$ ótimo obtido anteriormente o que resultou, respectivamente, nos seguintes erros estimados dentro da amostra de treinamento e fora da amostra no conjunto de validação. 
+
+```{r regul_lasso_sf, echo=FALSE, message=FALSE,cache = TRUE, warning=FALSE}
+
+# ajuste do modelo final no conjunto de treino
+
+model.lasso <- glmnet(x, dados_tr[,1], alpha = 1, lambda = cv.lasso$lambda.min)
+
+
+y_lasso_dentro <- predict(model.lasso, newx = x) # valor predito dentro da amostra
+
+lasso_erro_dentro <- mean(abs(y_lasso_dentro - dados_tr$Y))
+
+# fazendo predições nos dados de teste
+x.test <- model.matrix(Y ~.,data = dados_val)[,-1]
+
+
+y_lasso_fora <- predict(model.lasso, newx = x.test) # valor predito fora da amostra
+
+
+lasso_erro_fora <- mean(abs(y_lasso_fora - dados_val$Y))
+
+resultados[which(resultados$modelo=="lasso"), 2:3] = c(lasso_erro_dentro, lasso_erro_fora)
+
+resultados[which(resultados$modelo=="lasso"), ]
+```
+
+Neste caso, observa-se que o erro estimado fora da amostra no conjunto de validação associado ao modelo de regressão linear com penalização LASSO é melhor do que o obtido pela regressão linear sem regularização. O desempenho considerando o conjunto de teste pode ser visualizado graficamente. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="60%",fig.cap="Performance do modelo.", fig.align="center"}
+
+# performance do modelo
+
+ggplot() + 
+  geom_point(aes(y = dados_val$Y, x = y_lasso_fora)) +
+  geom_abline(col = "red") + labs(y = "Valor real da variável Y", 
+                        x =  "Predições", 
+                        title = "Performance do modelo: LASSO") +
+                         theme_minimal()
+```
+
+De igual forma, considera-se agora o método de regressão linear, porém, com penalização RIDGE. Aqui também foi necessário a validação cruzada para escolher o valor do hiperparâmetro de penalização que minimiza o erro de validação cruzada. Neste caso, o lambda selecionado foi de: 
+
+
+```{r regul_ride_sf_CV, echo=FALSE, message=FALSE, cache = TRUE, warning=FALSE}
+# RIDGE (alpha=0) - validação cruzada
+# ajuste para o melhor lambda usando cross-validation para a regressão ridge
+set.seed(1994) 
+cv.ridge <- cv.glmnet(x, dados_tr[,1], alpha = 0)
+
+cv.ridge$lambda.min
+```
+\noindent
+Então, ajustando um modelo de regressão linear com penalização RIDGE utilizando o $\lambda$ ótimo obtido anteriormente, obtemos respectivamente os seguintes erros estimados dentro da amostra de treinamento e fora da amostra no conjunto de validação. 
+
+```{r regul_ridge_sf,echo=FALSE, message=FALSE,cache = TRUE, warning=FALSE}
+
+# ajuste do modelo final no conjunto de treino
+
+model.ridge <- glmnet(x, dados_tr[,1], alpha = 0, lambda = cv.ridge$lambda.min)
+
+
+y_ridge_dentro <- predict(model.ridge, newx = x) # valor predito dentro da amostra
+
+ridge_erro_dentro <- mean(abs(y_ridge_dentro - dados_tr$Y))
+
+# fazendo predições nos dados de teste
+
+y_ridge_fora <- predict(model.ridge, newx = x.test) # valor predito fora da amostra
+
+
+ridge_erro_fora <- mean(abs(y_ridge_fora - dados_val$Y))
+
+resultados[which(resultados$modelo=="ridge"), 2:3] = c(ridge_erro_dentro, ridge_erro_fora)
+resultados[which(resultados$modelo=="ridge"), ]
+```
+
+Observe então que embora o erro estimado dentro da amostra de treinamento associado ao LASSO seja maior do que o obtido utilizando o RIDGE, o erro estimado fora da amostra no conjunto de validação associado do LASSO é menor. O desempenho considerando o conjunto de teste pode ser visualizado graficamente. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="60%",fig.cap="Performance do modelo.", fig.align="center"}
+
+# performance do modelo
+
+ggplot() + 
+  geom_point(aes(y = dados_val$Y, x = y_ridge_fora)) +
+  geom_abline(col = "red") + labs(y = "Valor real da variável Y", 
+                        x =  "Predições", 
+                        title = "Performance do modelo: RIDGE") +
+                         theme_minimal()
+```
+
+Por fim, considerando agora o método de regressão ELASTIC NET, por meio da validação cruzada, escolhemos o valor do hiperparâmetro de penalização que minimiza o erro de validação cruzada, dado por:
+
+```{r regul_elnet_sf_CV, echo=FALSE, message=FALSE, warning=FALSE,cache = TRUE}
+
+# Tarefa: usar a função glmnet para ajustar o modelo ridge (alpha=0) e
+# tambem elastic-net com lambda=0.5
+
+# elastic-net com alpha=0.5 - validação cruzada 
+# ajuste para o melhor lambda usando cross-validation para a regressão elastic-net 
+set.seed(1994) 
+cv.elastic <- cv.glmnet(x, dados_tr[,1], alpha = 0.5)
+
+# plot(cv.elastic, cex.lab = 1.3)
+
+cv.elastic$lambda.min
+```
+\noindent
+Desta forma, ajustando um modelo de regressão ELASTIC NET utilizando o valor de $\lambda$ ótimo obtido anteriormente, obtemos respectivamente os seguintes erros estimados dentro da amostra de treinamento e fora da amostra no conjunto de validação. 
+
+```{r regul_elnet_sf, echo=FALSE, message=FALSE, warning=FALSE}
+# ajuste do modelo final no conjunto de treino
+
+model.elastic <- glmnet(x, dados_tr[,1], alpha = 0.5, lambda = cv.elastic$lambda.min)
+
+
+y_elastic_dentro <- predict(model.elastic, newx = x) # valor predito dentro da amostra
+
+elastic_erro_dentro <- mean(abs(y_elastic_dentro - dados_tr$Y))
+
+# fazendo predições nos dados de teste
+
+y_elastic_fora <- predict(model.elastic, newx = x.test) # valor predito fora da amostra
+
+
+elastic_erro_fora <- mean(abs(y_elastic_fora - dados_val$Y))
+
+resultados[which(resultados$modelo=="elastic-net"), 2:3] = c(elastic_erro_dentro, elastic_erro_fora)
+
+resultados[which(resultados$modelo=="elastic-net"), ]
+```
+\noindent
+Neste caso, o erro estimado dentro da amostra de treinamento associado ELASTIC NET é maior do que os demais métodos de regularização. Contudo, o seu o erro estimado fora da amostra no conjunto de validação é menor. 
+
+De forma geral, embora o ELASTIC NET tenha obtido desempenho melhor nas predições no conjunto de validação, os métodos  de regularização possuem performance bem semelhantes entre si. Contudo, eles apresentam resultados melhores do que os obtidos com a regressão linear sem regularização. 
+
+
+# Árvore de regressão
+
+Em seguida, propomos agora um modelo de árvore de decisão no contexto de regressão. Sendo assim, usando a função \textit{tree}, do pacote de mesmo nome, ajustamos o modelo de árvore de regressão para explicar a vazão dadas as demais variáveis consideradas.
+
+```{r arvore_reg, echo=FALSE, cache = TRUE,message=FALSE, warning=FALSE}
+# Arvore de regressão -------------------------------------------------
+library(tree) # funcoes para estimar arvore de reg/class
+
+# Ver aula da semana 6: Métodos baseados em árvores de decisão
+# estimacao
+arvore <- tree(Y ~., data = dados_tr)
+
+summary(arvore)
+```
+
+Observe que apenas quatro variáveis foram utilizadas na construção da árvore, o que resultou em $8$ nós terminais. Ou seja, tem-se uma árvore $T$ com $8$ regiões. No contexto de árvore de regressão, o desvio é simplesmente a soma dos erros quadrados da árvore. A seguir, pode-se obsevar o plot da árvore.
+
+
+```{r echo=FALSE, fig.dim=c(7.2,4.5), message=FALSE, warning=FALSE}
+options(scipen = 999)
+plot(arvore) # ver arvore graficamente
+text(arvore, pretty=0, cex = 0.7) # adiciona elementos de texto
+lines(c(3.8, 3.8, 7.2, 7.2, 3.8), 
+      c(560000000, 3000000000, 3000000000, 560000000, 560000000), col = "red")
+
+```
+
+Para cada região, a predição é constante. Isto é, para todos os pontos que caírem em uma determinada região, a predição para todos esses pontos será a média de todos os pontos que caírem nessa região. Considere o retângulo vermelho: observe que a região para qual todos os valores de $X45298000$ são tais que $X45298000> 3506.44$, porém são também tais que $X46105000<5958.96$, bem como $X46105000<4472.77$, então os valores preditos da variável $y$ será valor $\hat{y}_{R_4} = 4442$. Ou seja, para todos os pontos que caírem nessa região, o valor predito de $y$ será $\hat{y}_{R_4} = 4442$, que corresponde a média de todos os pontos que pertencem a essa região.Com isso, as predições da variável $y$ feita com base nessa árvore resultou nos seguintes erros absoluto médio dentro e fora da amostra:  
+
+```{r arvore_pred, message=FALSE, warning=FALSE, include=FALSE}
+
+# predicao fora da amostra
+y_arvore_dentro <- predict(arvore,dados_tr) # valor predito dentro da amostra
+
+arvore_erro_dentro <- mean(abs(y_arvore_dentro - dados_tr$Y))
+
+# fazendo predições nos dados de teste
+
+y_arvore_fora <- predict(arvore,dados_val) # valor predito fora da amostra
+
+arvore_erro_fora <- mean(abs(y_arvore_fora - dados_val$Y))
+ 
+resultados[which(resultados$modelo=="arvore"), 2:3] = c(arvore_erro_dentro, arvore_erro_fora)
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+resultados[which(resultados$modelo=="arvore"), ]
+```
+
+Uma vez que o modelo obtido pela árvore de regressão é um modelo descontínuo, muitos pontos da amostra de teste vão ter o mesmo valor predito. Então o gráfico de dispersão do valor real da variável resposta $y$ contra o seu valor predito $\hat{y}$ será dado da seguinte forma:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="60%",fig.cap="Performance do modelo.", fig.align="center"}
+
+# performance do modelo
+library(ggplot2) # funcoes para criacao de graficos
+
+ggplot() + 
+  geom_point(aes(x = y_arvore_fora , y = dados_val$Y)) +
+  geom_abline(col = "red") + labs(y = "Valor real da variável Y", 
+                        x =  "Predições", 
+                        title = "Performance do modelo: Ávore de regressão") +
+                         theme_minimal()
+```
+
+## Poda da árvore 
+
+Usando a validação cruzada para encontrar uma árvore considerando árvores de diferentes tamanhos que foram podadas da árvore original, obteve-se o seguinte gráfico com os tamanhos das árvores e as respectivas raízes quadradas dos erros quadráticos médios. 
+
+```{r arvore_reg_pod_CV, echo=FALSE, message=FALSE, warning=FALSE,  out.width="80%",fig.cap="Poda da árvore que gera o menor RMSE.", fig.align="center"}
+
+# Arvore podada ---------------------------------------------------
+
+# fazer valicadao cruzada para escolher valor de k
+
+cv.arvore<-cv.tree(arvore)
+
+# índice da árvore com o menor erro 
+min_idx = which.min(cv.arvore$dev)
+
+# Número de nós terminais para esta árvore 
+#cv.arvore$size[min_idx]
+
+
+plot(cv.arvore$size, sqrt(cv.arvore$dev/nrow(dados_tr)), type = "b",
+     xlab = "Tamanho da árvore", ylab = "CV-RMSE")
+
+```
+
+Note que a árvore de 8 nós apresentou o MAE mais baixo obtido pela validação cruzada e, portanto, não há melhora no modelo, tendo em vista que o modelo anterior já tinha esse total de nós. Contudo, outra poda será realizada para uma árvore de tamanho 4, pois parece que tem um desempenho tão bom quanto, bem como também uma árvore podada é, como esperado, menor e mais fácil de interpretar.
+
+```{r echo=FALSE, message=FALSE, fig.dim=c(7.2,4.5), warning=FALSE, fig.cap="Gráfico da árvore podada."}
+
+arvore_poda <- prune.tree(arvore ,  
+                            best =  4) 
+plot(arvore_poda) 
+text(arvore_poda, pretty =  0, cex = 0.7)
+```
+
+Considerando essa árvore podada, as predições da variável $y$ com base na amostra de treinamento e amostra de teste resultou nos seguintes erros dentro e fora da amostra: 
+
+```{r arvore_reg_pod_pred, echo=FALSE, message=FALSE, warning=FALSE}
+
+# predicao fora da amostra
+y_arvore_poda_dentro <- predict(arvore_poda,dados_tr) # valor predito dentro da amostra
+
+arvore_poda_erro_dentro <- mean(abs(y_arvore_poda_dentro - dados_tr$Y))
+
+
+# fazendo predições nos dados de teste
+
+y_arvore_poda_fora <- predict(arvore_poda,dados_val) # valor predito fora da amostra
+
+arvore_poda_erro_fora <- mean(abs(y_arvore_poda_fora - dados_val$Y))
+
+resultados[which(resultados$modelo=="arvore podada"), 2:3] = c(arvore_poda_erro_dentro, arvore_poda_erro_fora)
+
+resultados[which(resultados$modelo=="arvore podada"),]
+
+```
+\noindent
+Note que a árvore podada possui erro fora da amostra maior que a árvore sem ser podada. Portanto, nesse caso, a árvore sem ser podada tem precisão maior nas predições.
+
+# Métodos baseados em árvores 
+## Bagging 
+
+Com o objetivo de melhorar os resultados obtidos anteriormente, o método bagging será proposto. Lembrando que o bagging é um caso particular do floresta aleatória, e portanto todas as $83$ variáveis preditoras são considerados para cada divisão da árvore. Aqui, o modelo bagging foi ajustado usando apropriadamente a função \textit{randomForest}. Neste caso, por meio da amostra de teste e validação, foram obtemos os seguintes erros estimados dentro e fora da amostra: 
+
+```{r bagging_sf, echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
+
+# Bagging e random Forest (Floresta aleatoria)
+
+library(randomForest) # funcoes para estimar floresta aleatoria
+
+# Bagging -----------------------------------------------------------------
+
+# estimacao
+set.seed(1994)
+bag <- randomForest(Y~ .,
+                    data = dados_tr,
+                    mtry = ncol(dados_tr)-1)
+
+
+
+# calculo da precisao do modelo
+
+# predicao dentro da amostra
+y_bag_dentro <- predict(bag,dados_tr) # valor predito dentro da amostra
+
+bag_erro_dentro <- mean(abs(y_bag_dentro - dados_tr$Y))
+
+# fazendo predições nos dados de teste
+
+y_bag_fora <- predict(bag,dados_val) # valor predito fora da amostra
+
+bag_erro_fora <- mean(abs(y_bag_fora - dados_val$Y))
+resultados[which(resultados$modelo=="bagging"), 2:3] = c(bag_erro_dentro, bag_erro_fora)
+
+resultados[which(resultados$modelo=="bagging"), ]
+
+```
+\noindent
+Pode-se observar então que há uma melhora expressiva apresentado pelo baixo erro obtido fora da amostra, uma vez que as predições estão bem próximas da linha vermelha que, nesta caso, representa o valor real da variável $Y$. Graficamente, tem-se que:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="60%",fig.cap="Performance do modelo.", fig.align="center"}
+
+# performance do modelo
+
+ggplot() + 
+  geom_point(aes(y = dados_val$Y, x = y_bag_fora)) +
+  geom_abline(col = "red") + labs(y = "Valor real da variável Y", 
+                        x =  "Predições", 
+                        title = "Performance do modelo: Bagging") +
+                         theme_minimal()
+```
+
+## Floresta aleatória
+
+Neste caso, o modelo de floresta aleatória foi ajustado utilizando a função \textit{randomForest} do pacote de mesmo nome, considerando como $27$ o número de variáveis aleatoriamente selecionadas como candidatas em cada split. Portanto, obteve-se os seguintes erros estimados dentro da amostra de treinamento e dentro da amostra no conjunto de teste:
+
+```{r rf_sf, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Floresta aleatoria ------------------------------------------------------
+set.seed(1994)
+rf <- randomForest(Y~ .,
+                   data = dados_tr)
+
+# predicao dentro da amostra
+y_rf_dentro <- predict(rf,dados_tr) # valor predito dentro da amostra
+
+rf_erro_dentro <- mean(abs(y_rf_dentro - dados_tr$Y))
+
+# fazendo predições nos dados de teste
+
+y_rf_fora <- predict(rf,dados_val) # valor predito fora da amostra
+
+(rf_erro_fora <- mean(abs(y_rf_fora - dados_val$Y)))
+
+resultados[which(resultados$modelo=="rf"), 2:3] = c(rf_erro_dentro, rf_erro_fora)
+resultados[which(resultados$modelo=="rf"), ]
+
+```
+\noindent
+Pode-se observar que os resultados são bastante similares aos obtidos utilizado o bagging e que os dois reduzem bastante o erro obtido com uma única árvore de regressão. O desempenho do modelo graficamente pode ser observado a seguir:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="60%",fig.cap="Performance do modelo.", fig.align="center"}
+
+# performance do modelo
+
+ggplot() + 
+  geom_point(aes(y = dados_val$Y, x = y_rf_fora)) +
+  geom_abline(col = "red") + labs(y = "Valor real da variável Y", 
+                        x =  "Predições", 
+                        title = "Performance do modelo: Floresta aleatoria") +
+                         theme_minimal()
+```
+
+## Boosting
+
+Agora será ajustado o boosting aos dados da vazão, por meio da função \textit{gbm} do pacote de mesmo nome e, com isso, foram obtidos os resultados a seguir: 
+
+
+```{r boosting_sf, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Boosting ----------------------------------------------------------------
+library(gbm) # funcoes para estimar o boosting
+
+set.seed(1994)
+bst <- gbm(Y ~ ., # formula
+           distribution = "gaussian", # para indicar problema de classificacao
+           n.trees = 100, # numero de arvores
+           interaction.depth = 1, # profundidade maxima da arvore # 4
+           shrinkage = 0.1, # taxa de aprendizagem # 0.01
+           data = dados_tr)
+
+# calculo da precisao do modelo
+
+# predicao fora da amostra
+y_bst_dentro <- predict(bst,dados_tr) # valor predito dentro da amostra
+
+bst_erro_dentro <- mean(abs(y_bst_dentro - dados_tr$Y))
+
+# fazendo predições nos dados de teste
+
+y_bst_fora <- predict(bst,dados_val) # valor predito fora da amostra
+
+bst_erro_fora <- mean(abs(y_bst_fora - dados_val$Y))
+
+resultados[which(resultados$modelo=="bst"), 2:3] = c(bst_erro_dentro, bst_erro_fora)
+resultados[which(resultados$modelo=="bst"), ]
+```
+
+Sendo assim, é possível observar que o erro estimado dentro da amostra de treinamento, bem como o erro estimado fora da amostra no conjunto de validação associado ao boosting são maiores do que os obtidos usando o bagging e o floresta aleatória, mas consideravelmente melhores do que utilizando uma única árvore ou árvore podada de forma otimizada. O desempenho considerando o conjunto de teste pode ser visualizado graficamente. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, out.width="60%",fig.cap="Performance do modelo.", fig.align="center"}
+
+# performance do modelo
+
+ggplot() + 
+  geom_point(aes(y = dados_val$Y, x = y_bst_fora)) +
+  geom_abline(col = "red") + labs(y = "Valor real da variável Y", 
+                        x =  "Predições", 
+                        title = "Performance do modelo: Boosting") +
+                         theme_minimal()
+```
+
+
+# Conclusão 
+Por fim, considerando o compartivo final, tem-se que:
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Comparativo final -------------------------------------------------------
+resultados[order(resultados$`MAE fora`),]
+```
+\noindent
+Portanto, o modelo escolhido foi bagging, uma vez que o modelo escolhido deve ser aquele com o menor erro na amostra de validação. Como o menor erro de predição foi o obtido pelo bagging, concluí-se que este é o melhor modelo para prever a vazão. Finalmente, considerando a amostra inteira (treinamento mais teste) modelo escolhido foi treinado. Posteriormente, foi utilizando os dados \textit{testesf} disponibilizados para avaliar a performance do modelo preditivo.
+
+Em conclusão, a aprendizagem estatística emerge como uma ferramenta transformadora, capaz de extrair significado e valor de dados complexos. Com isso, os modelos de aprendizado de máquina oferecem não apenas eficiência operacional, mas também insights inovadores que impulsionam a tomada de decisões informadas.  
+
+```{r bag_resultado_final, echo=FALSE, message=FALSE, warning=FALSE}
+# Treinando o modelo escolhido com os dados completos
+
+# Bagging -----------------------------------------------------------------
+
+# estimacao
+set.seed(1994)
+bag_completo <- randomForest(Y~ .,
+                    data = dados,
+                    mtry = ncol(dados)-1)
+
+
+
+# calculo da precisao do modelo
+
+# # fazendo predições nos dados de teste
+
+predicoes <- predict(bag_completo,data.frame(teste_sf)) # valor predito na amostra de teste
+write.csv(data.frame(y_pred = predicoes), file = "sf_12484563_Rodolpho.csv")
+```
+
